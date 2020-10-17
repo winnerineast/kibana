@@ -17,7 +17,7 @@
  * under the License.
  */
 
-import { Observable } from 'rxjs';
+import { Observable, from } from 'rxjs';
 
 import {
   CoreSetup,
@@ -48,8 +48,26 @@ describe('Search service', () => {
   });
 
   it('handler calls context.search.search with the given request and strategy', async () => {
-    const response = { id: 'yay' };
-    mockDataStart.search.search.mockResolvedValue(response);
+    const response = {
+      id: 'yay',
+      rawResponse: {
+        took: 100,
+        timed_out: true,
+        _shards: {
+          total: 0,
+          successful: 0,
+          failed: 0,
+          skipped: 0,
+        },
+        hits: {
+          total: 0,
+          max_score: 0,
+          hits: [],
+        },
+      },
+    };
+
+    mockDataStart.search.search.mockReturnValue(from(Promise.resolve(response)));
     const mockContext = {};
     const mockBody = { id: undefined, params: {} };
     const mockParams = { strategy: 'foo' };
@@ -66,7 +84,7 @@ describe('Search service', () => {
     await handler((mockContext as unknown) as RequestHandlerContext, mockRequest, mockResponse);
 
     expect(mockDataStart.search.search).toBeCalled();
-    expect(mockDataStart.search.search.mock.calls[0][1]).toStrictEqual(mockBody);
+    expect(mockDataStart.search.search.mock.calls[0][0]).toStrictEqual(mockBody);
     expect(mockResponse.ok).toBeCalled();
     expect(mockResponse.ok.mock.calls[0][0]).toEqual({
       body: response,
@@ -74,12 +92,16 @@ describe('Search service', () => {
   });
 
   it('handler throws an error if the search throws an error', async () => {
-    mockDataStart.search.search.mockRejectedValue({
-      message: 'oh no',
-      body: {
-        error: 'oops',
-      },
-    });
+    const rejectedValue = from(
+      Promise.reject({
+        message: 'oh no',
+        body: {
+          error: 'oops',
+        },
+      })
+    );
+
+    mockDataStart.search.search.mockReturnValue(rejectedValue);
 
     const mockContext = {};
     const mockBody = { id: undefined, params: {} };
@@ -97,7 +119,7 @@ describe('Search service', () => {
     await handler((mockContext as unknown) as RequestHandlerContext, mockRequest, mockResponse);
 
     expect(mockDataStart.search.search).toBeCalled();
-    expect(mockDataStart.search.search.mock.calls[0][1]).toStrictEqual(mockBody);
+    expect(mockDataStart.search.search.mock.calls[0][0]).toStrictEqual(mockBody);
     expect(mockResponse.customError).toBeCalled();
     const error: any = mockResponse.customError.mock.calls[0][0];
     expect(error.body.message).toBe('oh no');

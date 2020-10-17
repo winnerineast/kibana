@@ -39,6 +39,7 @@
  * @packageDocumentation
  */
 
+import { Type } from '@kbn/config-schema';
 import {
   ElasticsearchServiceSetup,
   ILegacyScopedClusterClient,
@@ -46,7 +47,6 @@ import {
   ElasticsearchServiceStart,
   IScopedClusterClient,
 } from './elasticsearch';
-
 import { HttpServiceSetup, HttpServiceStart } from './http';
 import { HttpResources } from './http_resources';
 
@@ -60,17 +60,22 @@ import {
   SavedObjectsServiceStart,
 } from './saved_objects';
 import { CapabilitiesSetup, CapabilitiesStart } from './capabilities';
-import { MetricsServiceStart } from './metrics';
+import { MetricsServiceSetup, MetricsServiceStart } from './metrics';
 import { StatusServiceSetup } from './status';
-import { Auditor, AuditTrailSetup, AuditTrailStart } from './audit_trail';
-import {
-  LoggingServiceSetup,
-  appendersSchema,
-  loggerContextConfigSchema,
-  loggerSchema,
-} from './logging';
+import { AppenderConfigType, appendersSchema, LoggingServiceSetup } from './logging';
+import { CoreUsageDataStart } from './core_usage_data';
 
-export { AuditableEvent, Auditor, AuditorFactory, AuditTrailSetup } from './audit_trail';
+// Because of #79265 we need to explicity import, then export these types for
+// scripts/telemetry_check.js to work as expected
+import {
+  CoreUsageData,
+  CoreConfigUsageData,
+  CoreEnvironmentUsageData,
+  CoreServicesUsageData,
+} from './core_usage_data';
+
+export { CoreUsageData, CoreConfigUsageData, CoreEnvironmentUsageData, CoreServicesUsageData };
+
 export { bootstrap } from './bootstrap';
 export { Capabilities, CapabilitiesProvider, CapabilitiesSwitcher } from './capabilities';
 export {
@@ -166,6 +171,7 @@ export {
   OnPostAuthToolkit,
   OnPreResponseHandler,
   OnPreResponseToolkit,
+  OnPreResponseRender,
   OnPreResponseExtensions,
   OnPreResponseInfo,
   RedirectResponseOptions,
@@ -271,9 +277,7 @@ export {
   SavedObjectUnsanitizedDoc,
   SavedObjectsRepositoryFactory,
   SavedObjectsResolveImportErrorsOptions,
-  SavedObjectsSchema,
   SavedObjectsSerializer,
-  SavedObjectsLegacyService,
   SavedObjectsUpdateOptions,
   SavedObjectsUpdateResponse,
   SavedObjectsAddToNamespacesOptions,
@@ -300,6 +304,7 @@ export {
   SavedObjectsTypeManagementDefinition,
   SavedObjectMigrationMap,
   SavedObjectMigrationFn,
+  SavedObjectsUtils,
   exportSavedObjectsToStream,
   importSavedObjectsFromStream,
   resolveSavedObjectsImportErrors,
@@ -326,18 +331,11 @@ export {
   OpsServerMetrics,
   OpsProcessMetrics,
   MetricsServiceSetup,
+  MetricsServiceStart,
 } from './metrics';
 
-export {
-  DEFAULT_APP_CATEGORIES,
-  getFlattenedObject,
-  URLMeaningfulParts,
-  modifyUrl,
-  isRelativeUrl,
-  Freezable,
-  deepFreeze,
-  assertNever,
-} from '../utils';
+export { AppCategory } from '../types';
+export { DEFAULT_APP_CATEGORIES } from '../utils';
 
 export {
   SavedObject,
@@ -352,14 +350,7 @@ export {
   SavedObjectsMigrationVersion,
 } from './types';
 
-export {
-  LegacyServiceSetupDeps,
-  LegacyServiceStartDeps,
-  LegacyServiceDiscoverPlugins,
-  LegacyConfig,
-  LegacyUiExports,
-  LegacyInternals,
-} from './legacy';
+export { LegacyServiceSetupDeps, LegacyServiceStartDeps, LegacyConfig } from './legacy';
 
 export {
   CoreStatus,
@@ -368,6 +359,8 @@ export {
   ServiceStatusLevels,
   StatusServiceSetup,
 } from './status';
+
+export { CoreUsageDataStart } from './core_usage_data';
 
 /**
  * Plugin specific context passed to a route handler.
@@ -383,7 +376,6 @@ export {
  *      data client which uses the credentials of the incoming request
  *    - {@link IUiSettingsClient | uiSettings.client} - uiSettings client
  *      which uses the credentials of the incoming request
- *    - {@link Auditor | uiSettings.auditor} - AuditTrail client scoped to the incoming request
  *
  * @public
  */
@@ -402,7 +394,6 @@ export interface RequestHandlerContext {
     uiSettings: {
       client: IUiSettingsClient;
     };
-    auditor: Auditor;
   };
 }
 
@@ -429,6 +420,8 @@ export interface CoreSetup<TPluginsStart extends object = object, TStart = unkno
   };
   /** {@link LoggingServiceSetup} */
   logging: LoggingServiceSetup;
+  /** {@link MetricsServiceSetup} */
+  metrics: MetricsServiceSetup;
   /** {@link SavedObjectsServiceSetup} */
   savedObjects: SavedObjectsServiceSetup;
   /** {@link StatusServiceSetup} */
@@ -437,8 +430,6 @@ export interface CoreSetup<TPluginsStart extends object = object, TStart = unkno
   uiSettings: UiSettingsServiceSetup;
   /** {@link StartServicesAccessor} */
   getStartServices: StartServicesAccessor<TPluginsStart, TStart>;
-  /** {@link AuditTrailSetup} */
-  auditTrail: AuditTrailSetup;
 }
 
 /**
@@ -472,8 +463,8 @@ export interface CoreStart {
   savedObjects: SavedObjectsServiceStart;
   /** {@link UiSettingsServiceStart} */
   uiSettings: UiSettingsServiceStart;
-  /** {@link AuditTrailSetup} */
-  auditTrail: AuditTrailStart;
+  /** @internal {@link CoreUsageDataStart} */
+  coreUsageData: CoreUsageDataStart;
 }
 
 export {
@@ -484,7 +475,6 @@ export {
   PluginsServiceSetup,
   PluginsServiceStart,
   PluginOpaqueId,
-  AuditTrailStart,
 };
 
 /**
@@ -497,8 +487,6 @@ export const config = {
     schema: elasticsearchConfigSchema,
   },
   logging: {
-    appenders: appendersSchema,
-    loggers: loggerSchema,
-    loggerContext: loggerContextConfigSchema,
+    appenders: appendersSchema as Type<AppenderConfigType>,
   },
 };
